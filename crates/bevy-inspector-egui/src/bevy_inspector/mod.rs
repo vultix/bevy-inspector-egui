@@ -38,6 +38,7 @@
 //! ```
 
 use std::any::TypeId;
+use std::default;
 use std::marker::PhantomData;
 use std::path::Path;
 
@@ -46,6 +47,7 @@ use bevy_asset::{Asset, AssetServer, Assets, ReflectAsset, UntypedAssetId};
 use bevy_ecs::query::{QueryFilter, WorldQuery};
 use bevy_ecs::world::CommandQueue;
 use bevy_ecs::{component::ComponentId, prelude::*};
+use bevy_platform::collections::HashSet;
 use bevy_reflect::{Reflect, TypeRegistry};
 use bevy_state::state::{FreelyMutableState, NextState, State};
 use fuzzy_matcher::FuzzyMatcher;
@@ -310,6 +312,7 @@ pub fn ui_for_entities_filtered<F>(
                         ui,
                         id,
                         &type_registry,
+        Default::default()
                     );
                     queue.apply(world);
                 }
@@ -518,6 +521,7 @@ fn ui_for_entity_with_children_inner<F>(
         ui,
         id,
         type_registry,
+        Default::default()
     );
 
     let children = world
@@ -546,7 +550,7 @@ fn ui_for_entity_with_children_inner<F>(
 }
 
 /// Display the components of the given entity
-pub fn ui_for_entity(world: &mut World, entity: Entity, ui: &mut egui::Ui) {
+pub fn ui_for_entity(world: &mut World, entity: Entity, ui: &mut egui::Ui, preferred_components: HashSet<TypeId>) {
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();
 
@@ -561,6 +565,7 @@ pub fn ui_for_entity(world: &mut World, entity: Entity, ui: &mut egui::Ui) {
         ui,
         egui::Id::new(entity),
         &type_registry,
+        preferred_components,
     );
     queue.apply(world);
 }
@@ -573,21 +578,32 @@ pub(crate) fn ui_for_entity_components(
     ui: &mut egui::Ui,
     id: egui::Id,
     type_registry: &TypeRegistry,
+    preferred_components: HashSet<TypeId>
 ) {
-    let Ok(components) = components_of_entity(world, entity) else {
+    let Ok(mut components) = components_of_entity(world, entity) else {
         errors::entity_does_not_exist(ui, entity);
         return;
     };
+    components.sort_by_key(|(_, _, component_type_id, _)| {
+        if let Some(type_id) = component_type_id && preferred_components.contains(type_id) {
+            0
+        } else {
+            1
+        }
+    });
 
     for (name, component_id, component_type_id, size) in components {
         let id = id.with(component_id);
 
-        let header = egui::CollapsingHeader::new(&name).id_salt(id);
+        let mut header = egui::CollapsingHeader::new(&name).id_salt(id);
 
         let Some(component_type_id) = component_type_id else {
             header.show(ui, |ui| errors::no_type_id(ui, &name));
             continue;
         };
+        if preferred_components.contains(&component_type_id) {
+            header = header.default_open(true);
+        }
 
         #[cfg(feature = "documentation")]
         let type_docs = type_registry

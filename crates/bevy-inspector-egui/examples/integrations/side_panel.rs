@@ -56,7 +56,7 @@ fn inspector_ui(world: &mut World, mut selected_entities: Local<SelectedEntities
 
                 match selected_entities.as_slice() {
                     &[entity] => {
-                        bevy_inspector_egui::bevy_inspector::ui_for_entity(world, entity, ui);
+                        bevy_inspector_egui::bevy_inspector::ui_for_entity(world, entity, ui, Default::default());
                     }
                     entities => {
                         bevy_inspector_egui::bevy_inspector::ui_for_entities_shared_components(

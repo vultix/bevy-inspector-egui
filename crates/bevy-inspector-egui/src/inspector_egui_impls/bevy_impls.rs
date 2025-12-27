@@ -73,6 +73,7 @@ impl InspectorPrimitive for Entity {
                             ui,
                             id,
                             env.type_registry,
+                            Default::default()
                         );
                         if options.despawnable
                             && world.contains_entity(entity)
