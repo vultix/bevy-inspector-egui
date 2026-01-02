@@ -481,13 +481,11 @@ fn ui_for_empty_set(ui: &mut egui::Ui) {
 
 struct MapDraftElement {
     key: Box<dyn PartialReflect>,
-    value: Box<dyn PartialReflect>,
 }
 impl Clone for MapDraftElement {
     fn clone(&self) -> Self {
         Self {
             key: self.key.to_dynamic(),
-            value: self.value.to_dynamic(),
         }
     }
 }
@@ -1042,63 +1040,31 @@ impl InspectorUi<'_, '_> {
         changed: &mut bool,
     ) -> Option<()> {
         let map_draft_id = id.with("map_draft");
-        let draft_clone = ui.data_mut(|data| {
-            data.get_temp_mut_or_default::<Option<MapDraftElement>>(map_draft_id)
-                .to_owned()
-        });
 
         let map_info = map.get_represented_map_info()?;
 
         let key_default = self.get_reflect_default(map_info.key_ty().id())?;
-        let value_default = self.get_reflect_default(map_info.value_ty().id())?;
+        let mut draft_clone = ui.data_mut(|data| {
+            data.get_temp_mut_or_insert_with(map_draft_id, || MapDraftElement {
+                key: key_default.default()
+            }).clone()
+        });
 
         ui.separator();
         ui.end_row();
         ui.label("New element");
-        match draft_clone {
-            None => {
-                // If no draft element exists, show a button to create one.
-                if add_button(ui).clicked() {
-                    // Insert a temporary 'draft' key-value pair into UI state.
-                    let key = key_default.default().into_partial_reflect();
-                    let value = value_default.default().into_partial_reflect();
-                    ui.data_mut(|data| {
-                        data.insert_temp(map_draft_id, Some(MapDraftElement { key, value }))
-                    });
-                }
-                ui.end_row();
-            }
-            Some(MapDraftElement { mut key, mut value }) => {
-                ui.end_row();
-                // Show controls for editing our draft element.
-                let key_changed = self.ui_for_reflect_with_options(key.as_mut(), ui, id, &());
-                let value_changed = self.ui_for_reflect_with_options(value.as_mut(), ui, id, &());
-
-                // If the clone changed, update the data in UI state.
-                if key_changed || value_changed {
-                    let next_draft = MapDraftElement { key, value };
-                    ui.data_mut(|data| data.insert_temp(map_draft_id, Some(next_draft)));
-                }
-
-                // Show controls to insert the draft into the map, or remove it.
-                if ui.button("Insert").clicked() {
-                    let draft = ui
-                        .data_mut(|data| data.get_temp::<Option<MapDraftElement>>(map_draft_id))
-                        .flatten();
-                    if let Some(draft) = draft {
-                        map.insert_boxed(draft.key, draft.value);
-                        ui.data_mut(|data| data.remove_by_type::<Option<MapDraftElement>>());
-                    }
-                    *changed = true;
-                }
-
-                if ui.button("Cancel").clicked() {
-                    ui.data_mut(|data| data.remove_by_type::<Option<MapDraftElement>>());
-                    *changed = true;
-                }
-                ui.end_row();
-            }
+        let key_changed = self.ui_for_reflect_with_options(draft_clone.key.as_mut(), ui, id, &());
+        if key_changed {
+            ui.data_mut(|data| data.insert_temp(map_draft_id, draft_clone.clone()));
         }
+
+        if ui.button("Insert").clicked() {
+            let value_default = self.get_reflect_default(map_info.value_ty().id())?;
+            map.insert_boxed(draft_clone.key, value_default.default().into_partial_reflect());
+            ui.data_mut(|data| data.remove_by_type::<MapDraftElement>());
+            *changed = true;
+        }
+
 
         Some(())
     }
